@@ -1,3 +1,5 @@
+#CI-TEST
+
 locals {
   name = "hotel-${var.environment}"
 }
