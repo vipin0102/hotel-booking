@@ -1,0 +1,62 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+
+permissions:
+  contents: read
+  pull-requests: write # needed to post the PR comment
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [dev, prod]
+    defaults:
+      run:
+        working-directory: infra/envs/${{ matrix.env }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive ../../
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform validate
+        run: terraform validate
+
+      # 1. Clearly visible workflow output (step log)
+      - name: Terraform plan
+        run: |
+          terraform plan -refresh=false -no-color -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      # 2. Workflow artifact
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ matrix.env }}
+          path: infra/envs/${{ matrix.env }}/plan.txt
+
+      # 3. PR comment (+ workflow summary page)
+      - name: Comment plan on PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### Terraform plan: ${{ matrix.env }}"
+            echo '```'
+            head -c 60000 plan.txt
+            echo '```'
+          } > comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+          gh pr comment ${{ github.event.pull_request.number }} --body-file comment.md
